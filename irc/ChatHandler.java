@@ -26,26 +26,28 @@ public class ChatHandler implements Iface {
     private List<messageSend> addBasedOnTime(messageSend r,List<messageSend> lr){
         int size=lr.size();
         if(size==0){lr.add(r);return lr;}
-        for(int i=0;i<size;i++){
-            if(lr.get(i).getTime()>r.getTime()){
-                lr.add(i,r);
-                break;
+        for(int i=0;i<size;i++) {
+            if (lr.get(i).getTime() > r.getTime()) {
+                lr.add(i, r);
+                return lr;
             }
         }
+        lr.add(r);
         return lr;
     }
 
     @Override
     public boolean sendMessage(messageSend m) throws TException{
         try {
+            int UId = m.getUsrid();
             String chname = m.getChname();
             if (chname == null) {//Send to all channel user belongs to
                 ArrayList<String> channels = userChannels.get(m.getUsrid());
-                if(channels.size() >0) {
+                if(channels.size()>0) {
                     for (String channel : channels) {
                         ArrayList<Integer> users = channelActive.get(channel);
                         m.setChname(channel);
-                        if(users.size()>0){
+                        if(users.contains(UId)){
                             for (Integer user : users) {
                                 List<messageSend> messages = chatbox.get(user);
                                 messageSend r=new messageSend();
@@ -55,19 +57,20 @@ public class ChatHandler implements Iface {
                                 r.setTime(m.getTime());
                                 //Add r based on time
                                 messages=addBasedOnTime(r,messages);
+                                System.out.println(m);
                             }
                         }
                         else{
-                            throw new Exception();
+                            throw new Exception("a");
                         }
                     }
                 }
                 else{
-                    throw new Exception();
+                    throw new Exception("b");
                 }
             } else {
                 ArrayList<Integer> users = channelActive.get(chname);
-                if(users.size()>0) {
+                if(users.contains(UId)) {
                     for (Integer user : users) {
                         List<messageSend> messages = chatbox.get(user);
                         messageSend r=new messageSend();
@@ -77,13 +80,15 @@ public class ChatHandler implements Iface {
                         r.setTime(m.getTime());
                         //Add r based on time
                         messages=addBasedOnTime(r,messages);
+                        System.out.println(m);
                     }
                 }
                 else{
-                    throw new Exception();
+                    throw new Exception("c");
                 }
             }
         } catch(Exception x){
+            System.out.println(x.getMessage());
             System.out.println(m.getChname() +" channel not found");
             return false;
         }
@@ -128,25 +133,34 @@ public class ChatHandler implements Iface {
     public boolean leaveChannel(int uId,String chname) throws TException{
         ArrayList<Integer> users=channelActive.get(chname);
         ArrayList<String> channels=userChannels.get(uId);
-        if(users.remove(new Integer(uId)) && channels.remove(chname)){
-            System.out.println(activeUsers.get(uId) + " leave " +chname);
-            return  true;
+        try{
+            if(users!=null && channels!=null) {
+                users.remove(uId);
+                channels.remove(chname);
+                System.out.println(activeUsers.get(uId) + " leave " + chname);
+                return true;
+            }
+        } catch(Exception x){
+            x.printStackTrace();
         }
-        else return false;
+        return false;
     }
 
     @Override
     public List<messageRecv> pullMessage(int userId) throws TException{
         List<messageRecv> l=new ArrayList<>();
-        messageRecv temp=new messageRecv();
-        for(messageSend m : chatbox.get(userId)){
-            temp.setNickname(activeUsers.get(m.getUsrid()));
-            SimpleDateFormat sdf = new SimpleDateFormat("MMM dd,yyyy HH:mm");
-            Date resultdate = new Date(m.getTime());
-            temp.setTime(sdf.format(resultdate));
-            temp.setMessage(m.getMessage());
-            temp.setChname(m.getChname());
-            l.add(temp);
+        if(chatbox.get(userId)!=null) {
+            for (messageSend m : chatbox.get(userId)) {
+                messageRecv temp = new messageRecv();
+                temp.setNickname(activeUsers.get(m.getUsrid()));
+                SimpleDateFormat sdf = new SimpleDateFormat("MMM dd,yyyy HH:mm");
+                Date resultdate = new Date(m.getTime());
+                temp.setTime(sdf.format(resultdate));
+                temp.setMessage(m.getMessage());
+                temp.setChname(m.getChname());
+                l.add(temp);
+            }
+            chatbox.get(userId).clear();
         }
         return l;
     }
@@ -156,7 +170,7 @@ public class ChatHandler implements Iface {
         for (Map.Entry<Integer, String> entry : activeUsers.entrySet())
         {
             if(nickname.equals(entry.getValue())){
-                return entry.getKey(); //username exist
+                return -1; //username exist
             }
         }
         List<messageSend> messages = new ArrayList<messageSend>();
@@ -164,7 +178,7 @@ public class ChatHandler implements Iface {
         chatbox.put(lastUId, messages);
         System.out.println("created new User : " + nickname);
         lastUId++;
-        return  lastUId;
+        return lastUId-1;
     }
 
     @Override
