@@ -13,7 +13,7 @@ public class IRCClient {
     private static int anonUId = 0;
     private static String currentUser = null;
     private static List<messageRecv> myMessages = new ArrayList<messageRecv>();
-
+    private static Object obj=new Object();
     public static void main(String [] args) {
         try {
             TTransport transport;
@@ -30,21 +30,24 @@ public class IRCClient {
 
 
 
-    private static void perform(ChatApplication.Client client) throws TException {
+    private static void perform(final ChatApplication.Client client) throws TException {
         try {
             Timer timer = new Timer();
             TimerTask asyncTask = new TimerTask() {
                 @Override
                 public void run() {
                     try{
-                        if(currentUId>-1 && currentUser!=null) {
-                            myMessages = client.pullMessage(currentUId);
+                        if (currentUId > -1 && currentUser != null) {
+                            synchronized (client) {
+                                myMessages = client.pullMessage(currentUId);
+                            }
                             if (!myMessages.isEmpty()) {
                                 for (messageRecv m : myMessages) {
                                     System.out.println("[" + m.getChname() + "] (" + m.getNickname() + "):" + m.getMessage() + " (" + m.getTime() + ")");
                                 }
                             }
                         }
+
                     } catch(TException x){
                         x.printStackTrace();
                     }
@@ -53,76 +56,96 @@ public class IRCClient {
             };
             timer.schedule(asyncTask, 0, 100);
             Scanner client_input = new Scanner(System.in);
+            String buffer,content;
             while (true) {
                 String input = client_input.nextLine();
-                String[] buffer = input.split("\\s+");
-                if (buffer.length > 0) {
-                    switch (buffer[0]) {
-                        case "/NICK":
-                            if (buffer.length > 1) {
-                                if(currentUser==null){
-                                    currentUId = client.createNick(buffer[1]);
-                                    if(currentUId>-1){
-                                        currentUser = buffer[1];
+                if(!input.isEmpty()) {
+                    if (input.contains(" ")) {
+                        buffer = input.substring(0, input.indexOf(' '));
+                        content = input.substring(input.indexOf(' ') + 1, input.length());
+                    }else{
+                        buffer=input;
+                        content=input;
+                    }
+                    if (buffer.length() > 0) {
+                        switch (buffer) {
+                            case "/NICK":
+                                if (!content.isEmpty()) {
+                                    if(currentUser==null){
+                                        synchronized (client) {
+                                            currentUId = client.createNick(content);
+                                        }
+                                        if(currentUId>-1){
+                                            currentUser = content;
+                                        }
+                                        else{
+                                            System.out.println("Username exist ! Please use another nickname");
+                                        }
                                     }
                                     else{
-                                        System.out.println("Username exist ! Please use another nickname");
+                                        System.out.println("You are logged in as " + currentUser + ". Reopen the client to use another nickname");
                                     }
                                 }
-                                else{
-                                    System.out.println("You are logged in as " + currentUser + ". Reopen the client to use another nickname");
+                                else {
+                                    currentUser = "user_"+anonUId;
+                                    synchronized (client) {
+                                        currentUId = client.createNick(currentUser);
+                                        anonUId++;
+                                    }
                                 }
-                            }
-                            else {
-                                currentUser = "user_"+anonUId;
-                                currentUId = client.createNick(currentUser);
-                                anonUId++;
-                            }
-                            break;
-                        case "/JOIN":
-                            if (buffer.length > 1) {
-                                client.joinChannel(currentUId, buffer[1]);
-                                System.out.println("You have joined " +buffer[1]);
-                            } else {
-                                client.joinChannel(currentUId, "general");
-                                System.out.println("You have joined general channel");
-                            }
-                            break;
-                        case "/LEAVE":
-                            if (buffer.length > 1) {
-                                if(!client.leaveChannel(currentUId, buffer[1])){
-                                    System.out.println("channel not found");
+                                break;
+                            case "/JOIN":
+                                if (!content.isEmpty()) {
+                                    synchronized (client) {
+                                        client.joinChannel(currentUId, content);
+                                        System.out.println("You have joined " + content);
+                                    }
+                                } else {
+                                    synchronized (client) {
+                                        client.joinChannel(currentUId, "general");
+                                        System.out.println("You have joined general channel");
+                                    }
                                 }
-                            }
-                            break;
-                        case "/EXIT":
-                            timer.cancel();
-                            timer.purge();
-                            client.exit(currentUId);
-                            return;
-                        default:
-                            messageSend M = new messageSend();
-                            M.setUsrid(currentUId);
-                            M.setTime(client.getServerTime());
-                            if (buffer[0].contains("@")) {
-                                M.setChname(buffer[0].substring(1));
-                                StringBuilder sb = new StringBuilder();
-                                for (int i = 1; i < buffer.length; i++) {
-                                    sb.append(buffer[i]);
+                                break;
+                            case "/LEAVE":
+                                if (!content.isEmpty()) {
+                                    synchronized (client) {
+                                        if (!client.leaveChannel(currentUId, content)) {
+                                            System.out.println("channel not found");
+                                        }
+                                    }
                                 }
-                                M.setMessage(sb.toString());
-                            } else {
-                                StringBuilder sb = new StringBuilder();
-                                for (int i = 0; i < buffer.length; i++) {
-                                    sb.append(buffer[i]);
+                                break;
+                            case "/EXIT":
+                                timer.cancel();
+                                timer.purge();
+                                synchronized (client) {
+                                    client.exit(currentUId);
                                 }
-                                M.setMessage(sb.toString());
-                            }
-                            if(!client.sendMessage(M)){
-                                System.out.println("channel unknown, please join a channel or recheck your message");
-                            }
+                                return;
+                            default:
+                                messageSend M = new messageSend();
+                                M.setUsrid(currentUId);
+                                synchronized (client) {
+                                    M.setTime(client.getServerTime());
+                                }
+                                if (buffer.contains("@")) {
+                                    M.setChname(buffer.substring(1));
+                                    M.setMessage(content);
+                                } else {
+                                    M.setMessage(input);
+                                }
+                                synchronized (client) {
+                                    if (!client.sendMessage(M)) {
+                                        System.out.println("channel unknown, please join a channel or recheck your message");
+                                    }
+                                }
+                        }
                     }
+                }else{
+                    System.out.println("format input wrong");
                 }
+
             }
         } catch(TException x){
             x.printStackTrace();
