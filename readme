@@ -1,0 +1,9 @@
+Langkah:
+1. Buka intellij
+2. Open Project gen-irc-java
+3. Import semua library yg dibutuhkan dengan Ctrl + Alt + Shift + S
+4. Buat folder untuk menaruh .class
+5. Run server
+6. Run client
+7. Ketikkan perintah
+
